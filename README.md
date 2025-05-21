@@ -28,26 +28,27 @@ jobs:
     name: Create Auto PR
     runs-on: ubuntu-latest
     steps:
-      - uses: your-username/auto-pr-creator@v1
+      - uses: vatfree/auto-pr-creator@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          target_branch: master  # Optional, defaults to master
-          add_labels: WIP        # Optional, defaults to WIP
+          target_branch: master # Optional, defaults to master
+          add_labels: WIP # Optional, defaults to WIP
 ```
 
 ## Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `github_token` | GitHub token for API access | Yes | N/A |
-| `target_branch` | The branch to create the PR against | No | `master` |
-| `add_labels` | Labels to add to the PR (comma-separated) | No | `WIP` |
+| Input           | Description                               | Required | Default  |
+| --------------- | ----------------------------------------- | -------- | -------- |
+| `github_token`  | GitHub token for API access               | Yes      | N/A      |
+| `target_branch` | The branch to create the PR against       | No       | `master` |
+| `add_labels`    | Labels to add to the PR (comma-separated) | No       | `WIP`    |
 
 ## Branch Name Handling
 
 The action handles branch names in two ways:
 
 1. If the branch name follows the pattern `type/123-description` (where 123 is a number), it will:
+
    - Extract the issue number (123)
    - Use the issue title as the PR title
    - Add "Fixes #123" to the PR description
