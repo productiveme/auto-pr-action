@@ -1,0 +1,97 @@
+name: 'Auto PR Creator'
+description: 'Automatically creates a pull request when a new branch is pushed'
+author: 'Your Name'
+
+inputs:
+  target_branch:
+    description: 'The branch to create the PR against'
+    required: false
+    default: 'master'
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+  add_labels:
+    description: 'Labels to add to the PR (comma-separated)'
+    required: false
+    default: 'WIP'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Extract branch name
+      shell: bash
+      run: |
+          branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+          echo "branch=$branch" >> $GITHUB_OUTPUT
+          
+          # Create a formatted branch title by removing prefix and replacing dashes with spaces
+          formatted_branch=$(echo $branch | sed 's|^[^/]*/||' | sed 's/-/ /g')
+          
+          # Check if the part after '/' starts with digits
+          if [[ $branch =~ ^[^/]*/[0-9] ]]; then
+            # Original behavior - extract issue number
+            issue=$(echo $branch | awk -F'/' '{ print $2 }' | grep -o '[0-9]*' | head -n 1)
+            echo "issue=$issue" >> $GITHUB_OUTPUT
+            echo "branch_title=Update from $branch" >> $GITHUB_OUTPUT
+          else
+            # New behavior - use formatted branch name as title
+            echo "issue=" >> $GITHUB_OUTPUT
+            echo "branch_title=$formatted_branch" >> $GITHUB_OUTPUT
+          fi
+      id: extract_branch
+    
+    - name: Check for existing PR
+      id: check_existing_pr
+      shell: bash
+      run: |
+        REPO_NAME="${{ github.repository }}"
+        BRANCH_NAME="${{ steps.extract_branch.outputs.branch }}"
+        
+        # Query for existing PRs from this branch (regardless of target branch)
+        existing_pr=$(curl -sSL -H "Authorization: Bearer ${{ inputs.github_token }}" \
+          "https://api.github.com/repos/${REPO_NAME}/pulls?head=${GITHUB_REPOSITORY_OWNER}:${BRANCH_NAME}&state=open" | \
+          jq -r 'if length > 0 then "true" else "false" end')
+        
+        echo "exists=$existing_pr" >> $GITHUB_OUTPUT
+        
+        if [ "$existing_pr" == "true" ]; then
+          echo "An open pull request already exists for branch $BRANCH_NAME. Skipping PR creation."
+        fi
+    
+    - name: Lookup Issue
+      id: lookup_issue
+      if: ${{ steps.extract_branch.outputs.issue != '' && steps.check_existing_pr.outputs.exists == 'false' }}
+      shell: bash
+      run: |
+        REPO_NAME="${{ github.repository }}"
+        ISSUE_NUMBER=${{ steps.extract_branch.outputs.issue }}
+
+        title=$(curl -sSL -H "Authorization: Bearer ${{ inputs.github_token }}" "https://api.github.com/repos/${REPO_NAME}/issues/${ISSUE_NUMBER}" | jq --raw-output '.title')
+        echo "title=$title" >> $GITHUB_OUTPUT
+        fixes="Fixes #${{ steps.extract_branch.outputs.issue }}"
+        echo "fixes=$fixes" >> $GITHUB_OUTPUT
+    
+    - name: pull-request-action
+      uses: vsoch/pull-request-action@master
+      id: pull_request
+      if: ${{ steps.check_existing_pr.outputs.exists == 'false' }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        PULL_REQUEST_BRANCH: ${{ inputs.target_branch }}
+        PULL_REQUEST_TITLE: ${{ steps.lookup_issue.outputs.title || steps.extract_branch.outputs.branch_title }}
+        PULL_REQUEST_BODY: |
+          This is an automated pull request to update from branch ${{ steps.extract_branch.outputs.branch }}
+
+          ${{ steps.lookup_issue.outputs.fixes || '' }}
+    
+    - name: Add labels
+      uses: actions-ecosystem/action-add-labels@v1
+      if: ${{ steps.pull_request.outputs.pull_request_number != '' && steps.check_existing_pr.outputs.exists == 'false' }}
+      with:
+        number: ${{ steps.pull_request.outputs.pull_request_number }}
+        labels: ${{ inputs.add_labels }}
+        github_token: ${{ inputs.github_token }}
+
+branding:
+  icon: 'git-pull-request'
+  color: 'blue'
