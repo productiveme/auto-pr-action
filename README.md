@@ -28,7 +28,7 @@ jobs:
     name: Create Auto PR
     runs-on: ubuntu-latest
     steps:
-      - uses: vatfree/auto-pr-creator@v1
+      - uses: vatfree/auto-pr-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           target_branch: master # Optional, defaults to master
