@@ -109,12 +109,43 @@ runs:
           ${{ steps.lookup_issue.outputs.fixes || '' }}
 
     - name: Add labels
-      uses: actions-ecosystem/action-add-labels@v1
+      id: add_labels
       if: ${{ steps.pull_request.outputs.pull_request_number != '' && steps.check_existing_pr.outputs.exists == 'false' }}
-      with:
-        number: ${{ steps.pull_request.outputs.pull_request_number }}
-        labels: ${{ inputs.add_labels }}
-        github_token: ${{ inputs.github_token }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        REPO_NAME="${{ github.repository }}"
+        PR_NUMBER="${{ steps.pull_request.outputs.pull_request_number }}"
+        LABELS="${{ inputs.add_labels }}"
+        
+        if [ -n "$LABELS" ] && [ -n "$PR_NUMBER" ]; then
+          echo "Adding labels '$LABELS' to PR #$PR_NUMBER"
+          
+          # Convert comma-separated labels to JSON array
+          labels_json=$(echo "$LABELS" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+          
+          # Try to add labels
+          response=$(curl -sSL -w "%{http_code}" -o /tmp/label_response.json \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${REPO_NAME}/issues/${PR_NUMBER}/labels" \
+            -d "{\"labels\": $labels_json}")
+          
+          if [ "$response" = "200" ]; then
+            echo "Successfully added labels to PR #$PR_NUMBER"
+          else
+            echo "::warning::Failed to add labels to PR #$PR_NUMBER (HTTP $response)"
+            if [ -f /tmp/label_response.json ]; then
+              error_msg=$(cat /tmp/label_response.json | jq -r '.message // "Unknown error"')
+              echo "::warning::Error: $error_msg"
+              echo "::notice::PR was created successfully, but labels could not be added due to insufficient permissions. Consider adding 'issues: write' permission to your workflow."
+            fi
+          fi
+        else
+          echo "Skipping label addition - no labels specified or PR number missing"
+        fi
 
 branding:
   icon: 'git-pull-request'
