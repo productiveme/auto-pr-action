@@ -62,15 +62,15 @@ runs:
         
         echo "API Response: $api_response"
         
-        # Check if the response contains an error
-        error_message=$(echo "$api_response" | jq -r '.message // empty')
-        
-        if [ -n "$error_message" ]; then
+        # Check if the response contains an error (error responses are objects with a "message" field)
+        # Valid responses are arrays (even if empty)
+        if echo "$api_response" | jq -e 'type == "object" and has("message")' > /dev/null 2>&1; then
+          error_message=$(echo "$api_response" | jq -r '.message')
           echo "::warning::GitHub API error: $error_message"
           echo "::warning::This might be due to insufficient token permissions. The action will proceed to create a PR."
           existing_pr="false"
         else
-          # No error, check if PRs exist
+          # No error, check if PRs exist (response should be an array)
           existing_pr=$(echo "$api_response" | jq -r 'if type == "array" and length > 0 then "true" else "false" end')
         fi
 
