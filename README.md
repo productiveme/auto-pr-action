@@ -27,6 +27,9 @@ jobs:
   auto-pull-request:
     name: Create Auto PR
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: vatfree/auto-pr-action@v1
         with:
@@ -57,6 +60,26 @@ The action handles branch names in two ways:
    - Removes any prefix before `/` (if present)
    - Replaces dashes with spaces
    - Uses the formatted branch name as the PR title
+
+## Troubleshooting
+
+### "Resource not accessible by integration" Error
+
+If you see this error, it means the `GITHUB_TOKEN` doesn't have sufficient permissions. Make sure your workflow includes the necessary permissions:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+The action requires:
+- `contents: read` - To access repository content
+- `pull-requests: write` - To create PRs and check for existing ones
+
+### Action Says PR Already Exists When It Doesn't
+
+This usually happens due to API permission errors. Check the action logs for "GitHub API error" messages. If you see permission errors, add the permissions section above to your workflow.
 
 ## License
 

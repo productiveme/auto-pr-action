@@ -56,12 +56,23 @@ runs:
         echo "Owner: $REPO_OWNER"
 
         # Query for existing PRs from this branch (regardless of target branch)
+        # Note: This requires 'pull-requests: read' permission for the GITHUB_TOKEN
         api_response=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
           "https://api.github.com/repos/${REPO_NAME}/pulls?head=${REPO_OWNER}:${BRANCH_NAME}&state=open")
         
         echo "API Response: $api_response"
         
-        existing_pr=$(echo "$api_response" | jq -r 'if length > 0 then "true" else "false" end')
+        # Check if the response contains an error
+        error_message=$(echo "$api_response" | jq -r '.message // empty')
+        
+        if [ -n "$error_message" ]; then
+          echo "::warning::GitHub API error: $error_message"
+          echo "::warning::This might be due to insufficient token permissions. The action will proceed to create a PR."
+          existing_pr="false"
+        else
+          # No error, check if PRs exist
+          existing_pr=$(echo "$api_response" | jq -r 'if type == "array" and length > 0 then "true" else "false" end')
+        fi
 
         echo "exists=$existing_pr" >> $GITHUB_OUTPUT
 
