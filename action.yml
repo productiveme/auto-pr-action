@@ -48,11 +48,20 @@ runs:
       run: |
         REPO_NAME="${{ github.repository }}"
         BRANCH_NAME="${{ steps.extract_branch.outputs.branch }}"
+        REPO_OWNER="${{ github.repository_owner }}"
+
+        # Debug output
+        echo "Repository: $REPO_NAME"
+        echo "Branch: $BRANCH_NAME"
+        echo "Owner: $REPO_OWNER"
 
         # Query for existing PRs from this branch (regardless of target branch)
-        existing_pr=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
-          "https://api.github.com/repos/${REPO_NAME}/pulls?head=${GITHUB_REPOSITORY_OWNER}:${BRANCH_NAME}&state=open" | \
-          jq -r 'if length > 0 then "true" else "false" end')
+        api_response=$(curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
+          "https://api.github.com/repos/${REPO_NAME}/pulls?head=${REPO_OWNER}:${BRANCH_NAME}&state=open")
+        
+        echo "API Response: $api_response"
+        
+        existing_pr=$(echo "$api_response" | jq -r 'if length > 0 then "true" else "false" end')
 
         echo "exists=$existing_pr" >> $GITHUB_OUTPUT
 
