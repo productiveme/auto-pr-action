@@ -32,7 +32,7 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - uses: vatfree/auto-pr-action@v1
+      - uses: productiveme/auto-pr-action@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           target_branch: master # Optional, defaults to master
