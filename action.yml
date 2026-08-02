@@ -14,6 +14,10 @@ inputs:
     description: 'Labels to add to the PR (comma-separated)'
     required: false
     default: 'WIP'
+  target_branch_file:
+    description: 'Path to a file containing the base branch name (first line, trimmed). Falls back to target_branch if the file is missing or empty.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -95,13 +99,35 @@ runs:
         fixes="Fixes #${{ steps.extract_branch.outputs.issue }}"
         echo "fixes=$fixes" >> $GITHUB_OUTPUT
 
+    - name: Resolve base branch
+      id: resolve_base_branch
+      if: ${{ steps.check_existing_pr.outputs.exists == 'false' }}
+      shell: bash
+      run: |
+        branch="${{ inputs.target_branch }}"
+        branch_file="${{ inputs.target_branch_file }}"
+
+        if [ -n "$branch_file" ] && [ -f "$branch_file" ]; then
+          file_branch=$(head -n 1 "$branch_file" | tr -d '[:space:]')
+          if [ -n "$file_branch" ]; then
+            echo "Read base branch from file $branch_file: $file_branch"
+            branch="$file_branch"
+          else
+            echo "::notice::File $branch_file is empty; falling back to target_branch input ($branch)."
+          fi
+        elif [ -n "$branch_file" ]; then
+          echo "::notice::File $branch_file not found; falling back to target_branch input ($branch)."
+        fi
+
+        echo "branch=$branch" >> $GITHUB_OUTPUT
+
     - name: pull-request-action
       uses: vsoch/pull-request-action@master
       id: pull_request
       if: ${{ steps.check_existing_pr.outputs.exists == 'false' }}
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
-        PULL_REQUEST_BRANCH: ${{ inputs.target_branch }}
+        PULL_REQUEST_BRANCH: ${{ steps.resolve_base_branch.outputs.branch }}
         PULL_REQUEST_TITLE: ${{ steps.lookup_issue.outputs.title || steps.extract_branch.outputs.branch_title }}
         PULL_REQUEST_BODY: |
           This is an automated pull request to update from branch ${{ steps.extract_branch.outputs.branch }}

@@ -36,6 +36,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           target_branch: master # Optional, defaults to master
+          target_branch_file: .github/base_branch # Optional, path to a file containing the base branch (first line, trimmed). Falls back to target_branch if missing/empty.
           add_labels: WIP # Optional, defaults to WIP
 ```
 
@@ -52,11 +53,12 @@ Without these settings, the action won't be able to create PRs even with the cor
 
 ## Inputs
 
-| Input           | Description                               | Required | Default  |
-| --------------- | ----------------------------------------- | -------- | -------- |
-| `github_token`  | GitHub token for API access               | Yes      | N/A      |
-| `target_branch` | The branch to create the PR against       | No       | `master` |
-| `add_labels`    | Labels to add to the PR (comma-separated) | No       | `WIP`    |
+| Input               | Description                                                                                                                | Required | Default  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `github_token`      | GitHub token for API access                                                                                                | Yes      | N/A      |
+| `target_branch`     | The branch to create the PR against                                                                                        | No       | `master` |
+| `target_branch_file`| Path to a file containing the base branch (first non-empty line, trimmed). Overrides `target_branch` when set and non-empty. | No       | `''`     |
+| `add_labels`        | Labels to add to the PR (comma-separated)                                                                                  | No       | `WIP`    |
 
 ## Branch Name Handling
 
@@ -72,6 +74,25 @@ The action handles branch names in two ways:
    - Removes any prefix before `/` (if present)
    - Replaces dashes with spaces
    - Uses the formatted branch name as the PR title
+
+## Base Branch From File
+
+You can determine the base branch at runtime by pointing `target_branch_file` at a file in the repository whose first non-empty line is the branch name. Whitespace is trimmed.
+
+```yaml
+- uses: productiveme/auto-pr-action@v1
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    target_branch_file: .github/base_branch
+```
+
+Example `.github/base_branch` file:
+
+```
+main
+```
+
+If the file is missing or empty, the action falls back to the value of `target_branch` (default `master`) and logs a `::notice::` line. This is useful when the base branch is decided by another workflow step or by a tool that writes the desired target into a known file before this action runs.
 
 ## Troubleshooting
 
