@@ -18,6 +18,10 @@ inputs:
     description: 'Path to a file containing the base branch name (first line, trimmed). Falls back to target_branch if the file is missing or empty.'
     required: false
     default: ''
+  auto_stack:
+    description: 'Stack the PR onto the branch it was cut from when that branch converges on the same base branch. Falls back to the resolved base branch otherwise.'
+    required: false
+    default: 'true'
 
 runs:
   using: 'composite'
@@ -103,23 +107,102 @@ runs:
       id: resolve_base_branch
       if: ${{ steps.check_existing_pr.outputs.exists == 'false' }}
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        AUTO_STACK: ${{ inputs.auto_stack }}
+        CURRENT_BRANCH: ${{ steps.extract_branch.outputs.branch }}
       run: |
-        branch="${{ inputs.target_branch }}"
+        set -euo pipefail
+
+        base="${{ inputs.target_branch }}"
         branch_file="${{ inputs.target_branch_file }}"
 
         if [ -n "$branch_file" ] && [ -f "$branch_file" ]; then
           file_branch=$(head -n 1 "$branch_file" | tr -d '[:space:]')
           if [ -n "$file_branch" ]; then
             echo "Read base branch from file $branch_file: $file_branch"
-            branch="$file_branch"
+            base="$file_branch"
           else
-            echo "::notice::File $branch_file is empty; falling back to target_branch input ($branch)."
+            echo "::notice::File $branch_file is empty; falling back to target_branch input ($base)."
           fi
         elif [ -n "$branch_file" ]; then
-          echo "::notice::File $branch_file not found; falling back to target_branch input ($branch)."
+          echo "::notice::File $branch_file not found; falling back to target_branch input ($base)."
         fi
 
-        echo "branch=$branch" >> $GITHUB_OUTPUT
+        resolved="$base"
+
+        # Stack the PR onto the branch this one was cut from, when that branch is
+        # itself converging on the same base branch. This lets a branch that was
+        # built on another ticket's branch target that branch instead of the base,
+        # keeping the PR diff focused. Enabled by default; opt out with
+        # auto_stack: false.
+        if [ -n "${AUTO_STACK:-}" ] && [ "${AUTO_STACK,,}" = "true" ]; then
+          if git rev-parse --git-dir > /dev/null 2>&1; then
+            # Make the history we need available: a full (unshallowed) clone and
+            # every remote branch, so ancestry against other branches resolves.
+            if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+              git fetch --no-tags --quiet --unshallow origin '+refs/heads/*:refs/remotes/origin/*' \
+                || echo "::warning::Could not unshallow the repository; automatic stacking may be skipped."
+            fi
+            git fetch --no-tags --quiet origin '+refs/heads/*:refs/remotes/origin/*' \
+              || echo "::warning::Could not fetch remote branches; automatic stacking may be skipped."
+
+            branch="${CURRENT_BRANCH:-}"
+            if [ -z "$branch" ]; then
+              branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+            fi
+            head_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
+
+            # The branch this one was originally cut from: the most recent remote
+            # branch (other than the base) whose tip is an ancestor of HEAD and that
+            # has not already been merged into the base.
+            parent=""
+            best=0
+            while read -r ref; do
+              [ -z "$ref" ] && continue
+              b="${ref#origin/}"
+              case "$b" in "$branch" | "$base" | master | HEAD) continue ;; esac
+              if [ -n "$head_sha" ] && [ "$(git rev-parse "$ref" 2>/dev/null || echo x)" = "$head_sha" ]; then continue; fi
+              if ! git merge-base --is-ancestor "$ref" HEAD 2>/dev/null; then continue; fi
+              if git merge-base --is-ancestor "$ref" "origin/$base" 2>/dev/null; then continue; fi
+              t=$(git log -1 --format=%ct "$ref" 2>/dev/null || echo 0)
+              if [ "$t" -gt "$best" ]; then best="$t"; parent="$b"; fi
+            done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin/)
+
+            # Walk a branch's own PR base (or its base_branch file) up to a root,
+            # to test whether it ultimately targets the same base branch.
+            root_of() {
+              local b="$1" next depth=0
+              while [ "$depth" -lt 10 ]; do
+                next=$(gh pr view "$b" --json baseRefName -q .baseRefName 2>/dev/null || true)
+                if [ -z "$next" ]; then
+                  next=$(git show "origin/$b:.github/base_branch" 2>/dev/null | tr -d '[:space:]' || true)
+                fi
+                if [ -z "$next" ] || [ "$next" = "$b" ]; then break; fi
+                b="$next"
+                depth=$((depth + 1))
+              done
+              printf '%s' "$b"
+            }
+
+            if [ -n "$parent" ] && [ "$(root_of "$parent")" = "$base" ]; then
+              resolved="$parent"
+            fi
+
+            echo "Base branch: $base; parent candidate: ${parent:-none}; resolved: $resolved"
+            {
+              echo "### Auto PR base resolution"
+              echo ""
+              echo "- Base branch: \`$base\`"
+              echo "- Parent candidate: \`${parent:-none}\`"
+              echo "- Resolved base: \`$resolved\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::Not a git checkout; skipping automatic PR stacking."
+          fi
+        fi
+
+        echo "branch=$resolved" >> $GITHUB_OUTPUT
 
     - name: pull-request-action
       uses: vsoch/pull-request-action@master

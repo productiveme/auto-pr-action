@@ -9,6 +9,7 @@ This GitHub Action automatically creates a pull request when a new branch is pus
 - Uses issue titles for PR titles when possible
 - Adds customizable labels to the PR
 - Formats branch names into readable PR titles
+- Automatically stacks the PR on the branch it was cut from when both target the same base branch
 
 ## Usage
 
@@ -59,6 +60,7 @@ Without these settings, the action won't be able to create PRs even with the cor
 | `target_branch`     | The branch to create the PR against                                                                                        | No       | `master` |
 | `target_branch_file`| Path to a file containing the base branch (first non-empty line, trimmed). Overrides `target_branch` when set and non-empty. | No       | `''`     |
 | `add_labels`        | Labels to add to the PR (comma-separated)                                                                                  | No       | `WIP`    |
+| `auto_stack`        | Stack the PR on the branch it was cut from when that branch converges on the same base branch.                            | No       | `true`   |
 
 ## Branch Name Handling
 
@@ -93,6 +95,29 @@ main
 ```
 
 If the file is missing or empty, the action falls back to the value of `target_branch` (default `master`) and logs a `::notice::` line. This is useful when the base branch is decided by another workflow step or by a tool that writes the desired target into a known file before this action runs.
+
+## Automatic Stacking
+
+By default (`auto_stack: true`), the action stacks the new PR on the branch it was cut from instead of always targeting the base branch. This keeps the diff of a stacked branch limited to its own changes.
+
+The action resolves the base as follows:
+
+1. Determine the base branch: `target_branch_file` (first non-empty line, trimmed) if set, otherwise `target_branch`.
+2. Find the branch this one was cut from: the most recent remote branch (other than the base) whose tip is an ancestor of `HEAD` and that has not already been merged into the base.
+3. Walk that branch's own PR base — or its `.github/base_branch` file — up to a root. If the root converges on the same base branch, stack the PR on that parent branch. Otherwise fall back to the base branch.
+
+The action makes sure it has the history it needs: if the repository was checked out shallowly, it unshallows it and fetches all remote branches before resolving the base. No `fetch-depth: 0` is required in the consumer workflow.
+
+To disable stacking and always target the resolved base branch, set:
+
+```yaml
+- uses: productiveme/auto-pr-action@v1
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    auto_stack: false
+```
+
+The resolution is summarised in the workflow run's step summary.
 
 ## Troubleshooting
 
