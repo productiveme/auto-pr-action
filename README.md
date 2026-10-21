@@ -104,7 +104,7 @@ The action resolves the base as follows:
 
 1. Determine the base branch: `target_branch_file` (first non-empty line, trimmed) if set, otherwise `target_branch`.
 2. Find the branch this one was cut from: the most recent remote branch (other than the base) whose tip is an ancestor of `HEAD` and that has not already been merged into the base.
-3. Walk that branch's own PR base — or its `.github/base_branch` file — up to a root. If the root converges on the same base branch, stack the PR on that parent branch. Otherwise fall back to the base branch.
+3. Walk that branch's own PR base — or its `.github/base_branch` file — up to a root, stopping as soon as the walk reaches the configured base branch. The base branch's own release PR (for example `premium → master`) is not followed. If the root converges on the same base branch, stack the PR on that parent branch. Otherwise fall back to the base branch.
 
 The action makes sure it has the history it needs: if the repository was checked out shallowly, it unshallows it and fetches all remote branches before resolving the base. No `fetch-depth: 0` is required in the consumer workflow.
 
